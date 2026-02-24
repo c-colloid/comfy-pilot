@@ -730,14 +730,12 @@ def get_comfyui_url_cached():
 async def setup_desktop_handler(request):
     """Manually trigger Desktop MCP config setup."""
     try:
-        setup_desktop_mcp_config()
-        configured = _is_desktop_mcp_configured()
-        config_path = get_desktop_config_path()
+        success, message = setup_desktop_mcp_config()
         return web.json_response({
-            "status": "ok" if configured else "failed",
-            "configured": configured,
-            "config_path": config_path,
-            "message": "Restart Claude Desktop to activate the MCP server" if configured else "Could not write config"
+            "status": "ok" if success else "failed",
+            "configured": success,
+            "config_path": get_desktop_config_path(),
+            "message": message
         })
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -756,10 +754,13 @@ def setup_routes(app):
     app.router.add_get("/claude-code/platform", platform_info_handler)
     app.router.add_post("/claude-code/setup-desktop", setup_desktop_handler)
     print("[Comfy Pilot] Endpoints registered: workflow, graph-command, mcp-status, platform, setup-desktop")
-    if not IS_WINDOWS:
+    cli_available = not IS_WINDOWS and find_executable("claude") is not None
+    if cli_available:
         print("[Comfy Pilot] Terminal WebSocket registered at /ws/claude-terminal")
-    else:
+    elif IS_WINDOWS:
         print("[Comfy Pilot] Note: Terminal disabled on Windows (use Claude Desktop)")
+    else:
+        print("[Comfy Pilot] Note: Terminal available when Claude CLI is installed")
 
 
 def write_comfyui_url():
@@ -818,16 +819,20 @@ def setup_desktop_mcp_config():
 
     Writes to claude_desktop_config.json so Claude Desktop can use our MCP server.
     Preserves any existing config entries (other MCP servers, etc).
+
+    Returns:
+        tuple: (success: bool, message: str)
     """
     config_path = get_desktop_config_path()
     if not config_path:
-        print("[Comfy Pilot] Could not determine Claude Desktop config path")
-        return
+        msg = "Could not determine Claude Desktop config path"
+        print(f"[Comfy Pilot] {msg}")
+        return (False, msg)
 
     config_dir = os.path.dirname(config_path)
     if not os.path.isdir(config_dir):
         # Desktop not installed — skip silently
-        return
+        return (False, "Claude Desktop not installed")
 
     plugin_dir = os.path.dirname(os.path.abspath(__file__))
     mcp_server_path = os.path.join(plugin_dir, "mcp_server.py")
@@ -857,8 +862,9 @@ def setup_desktop_mcp_config():
     # Check if already configured with the same values
     existing = config["mcpServers"].get("comfyui")
     if existing and existing.get("command") == python_path and existing.get("args") == [mcp_server_path]:
-        print("[Comfy Pilot] Desktop MCP config already up to date")
-        return
+        msg = "Desktop MCP config already up to date"
+        print(f"[Comfy Pilot] {msg}")
+        return (True, msg)
 
     # Update the comfyui entry (preserve all other entries)
     config["mcpServers"]["comfyui"] = desired_entry
@@ -869,11 +875,16 @@ def setup_desktop_mcp_config():
             json.dump(config, f, indent=2)
         print(f"[Comfy Pilot] Desktop MCP config written to {config_path}")
         if existing:
-            print("[Comfy Pilot] Note: Restart Claude Desktop to pick up the updated config")
+            msg = "Config updated. Restart Claude Desktop to apply changes."
+            print(f"[Comfy Pilot] Note: {msg}")
         else:
-            print("[Comfy Pilot] Note: Restart Claude Desktop to activate the MCP server")
+            msg = "Config created. Restart Claude Desktop to activate the MCP server."
+            print(f"[Comfy Pilot] Note: {msg}")
+        return (True, msg)
     except IOError as e:
-        print(f"[Comfy Pilot] Warning: Could not write {config_path}: {e}")
+        msg = f"Could not write {config_path}: {e}"
+        print(f"[Comfy Pilot] Warning: {msg}")
+        return (False, msg)
 
 
 def setup_mcp_config():

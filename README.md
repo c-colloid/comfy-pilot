@@ -43,11 +43,17 @@ Claude Code CLI will be installed automatically if not found.
 
 - ComfyUI
 - Python 3.8+
+- One of the following Claude clients:
+  - **Claude Code CLI** (macOS / Linux) — embedded terminal experience
+  - **Claude Desktop** (macOS / Windows / Linux) — use MCP tools from the desktop app
+
+> **Note:** ComfyUI must be open in your browser for both clients. The MCP tools interact with the workflow through the browser frontend.
 
 ## Features
 
-- **MCP Server** - Gives Claude Code direct access to view, edit, and run your ComfyUI workflows
-- **Embedded Terminal** - Full xterm.js terminal running Claude Code right inside ComfyUI
+- **MCP Server** - Gives Claude direct access to view, edit, and run your ComfyUI workflows
+- **Embedded Terminal** - Full xterm.js terminal running Claude Code right inside ComfyUI (CLI mode)
+- **Claude Desktop Support** - Use MCP tools directly from Claude Desktop app
 - **Image Viewing** - Claude can see outputs from Preview Image and Save Image nodes
 - **Graph Editing** - Create, delete, move, and connect nodes programmatically
 
@@ -57,14 +63,27 @@ https://github.com/user-attachments/assets/325b1194-2334-48a1-94c3-86effd1fef02
 
 ## Usage
 
+### With Claude Code CLI (macOS / Linux)
+
 1. Restart ComfyUI after installation
-2. The floating Claude Code terminal appears in the top-right corner
+2. The floating Comfy Pilot terminal appears in the top-right corner
 3. The MCP server is automatically configured for Claude Code
-4. Ask Claude to help with your workflow:
-   - "What nodes are in my current workflow?"
-   - "Add a KSampler node connected to my checkpoint loader"
-   - "Look at the preview image and tell me what you see"
-   - "Run the workflow up to node 5"
+4. Ask Claude to help with your workflow
+
+### With Claude Desktop (macOS / Windows / Linux)
+
+1. Restart ComfyUI after installation
+2. The Comfy Pilot panel shows Desktop mode status
+3. Click **"Setup Desktop MCP"** to configure (or it auto-configures on startup)
+4. **Restart Claude Desktop** to load the new MCP server
+5. Open Claude Desktop and use the ComfyUI tools
+6. Keep ComfyUI open in your browser while using Claude Desktop
+
+**Example prompts:**
+- "What nodes are in my current workflow?"
+- "Add a KSampler node connected to my checkpoint loader"
+- "Look at the preview image and tell me what you see"
+- "Run the workflow up to node 5"
 
 ## MCP Tools
 
@@ -131,7 +150,9 @@ Claude will use `download_model` to download from Hugging Face to your ComfyUI m
 │  Browser (ComfyUI)                                  │
 │  ┌─────────────────┐  ┌──────────────────────────┐  │
 │  │  xterm.js       │  │  Workflow State          │  │
-│  │  Terminal       │  │  (synced to backend)     │  │
+│  │  Terminal (CLI) │  │  (synced to backend)     │  │
+│  │  — or —         │  │                          │  │
+│  │  Desktop Panel  │  │                          │  │
 │  └────────┬────────┘  └────────────┬─────────────┘  │
 │           │ WebSocket              │ REST API       │
 └───────────┼────────────────────────┼────────────────┘
@@ -141,7 +162,7 @@ Claude will use `download_model` to download from Hugging Face to your ComfyUI m
 │  ComfyUI Server                                     │
 │  ┌─────────────────┐  ┌──────────────────────────┐  │
 │  │  PTY Process    │  │  Plugin Endpoints        │  │
-│  │  (claude CLI)   │  │  /claude-code/*          │  │
+│  │  (CLI mode)     │  │  /claude-code/*          │  │
 │  └─────────────────┘  └──────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
             │                        │
@@ -149,13 +170,16 @@ Claude will use `download_model` to download from Hugging Face to your ComfyUI m
             │           ┌──────────────────────────┐
             └──────────▶│  MCP Server              │
                         │  (stdio transport)       │
+Claude Code CLI ────────│                          │
+  — or —                │                          │
+Claude Desktop ─────────│                          │
                         └──────────────────────────┘
 ```
 
 ## Files
 
-- `__init__.py` - Plugin backend: WebSocket terminal, REST endpoints
-- `js/claude-code.js` - Frontend: xterm.js terminal, workflow sync
+- `__init__.py` - Plugin backend: WebSocket terminal, REST endpoints, Desktop config
+- `js/claude-code.js` - Frontend: xterm.js terminal, Desktop status panel, workflow sync
 - `mcp_server.py` - MCP server for Claude Code integration
 - `CLAUDE.md` - Instructions for Claude when working with ComfyUI
 
@@ -198,6 +222,19 @@ The plugin auto-configures MCP on startup. Check ComfyUI console for errors, or 
 ### Terminal disconnected
 
 Click the ↻ button to reconnect, or check ComfyUI console for errors.
+
+### Claude Desktop: MCP tools not appearing
+
+1. Make sure ComfyUI is running and the Comfy Pilot panel shows "Configured"
+2. **Restart Claude Desktop** after the MCP config is written
+3. Check config file exists at:
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+   - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+### Claude Desktop: "Failed to connect to ComfyUI"
+
+ComfyUI must be running and open in your browser. The MCP tools interact with the workflow through the browser frontend — the browser tab must stay open.
 
 ## License
 

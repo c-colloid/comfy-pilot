@@ -87,7 +87,14 @@ function loadScript(src) {
 
 
 function isDesktopMode() {
-    return platformInfo && !platformInfo.terminal_supported;
+    if (!platformInfo) return false;
+    // Desktop mode = terminal not available AND Desktop is detected
+    return !platformInfo.terminal_supported && platformInfo.desktop_detected;
+}
+
+function isUnsupportedMode() {
+    // No terminal (Windows or no CLI) AND no Desktop installed
+    return platformInfo && !platformInfo.terminal_supported && !platformInfo.desktop_detected;
 }
 
 function createFloatingWindow() {
@@ -95,9 +102,30 @@ function createFloatingWindow() {
     container.id = "claude-code-window";
 
     const desktopMode = isDesktopMode();
+    const unsupportedMode = isUnsupportedMode();
 
-    // In Desktop mode, show a compact status panel instead of a terminal
-    const contentHtml = desktopMode ? `
+    // Choose content based on detected mode
+    let contentHtml;
+    if (unsupportedMode) {
+        // No CLI terminal and no Desktop detected — show guidance
+        contentHtml = `
+        <div class="claude-content">
+            <div class="claude-desktop-panel">
+                <div class="desktop-info">
+                    <p><strong>No Claude client detected.</strong></p>
+                    <p>To use Comfy Pilot, install one of the following:</p>
+                    <ul style="text-align:left;margin:10px auto;max-width:280px;line-height:1.8">
+                        <li><strong>Claude Desktop</strong> (recommended for ${platformInfo.is_windows ? "Windows" : "this platform"})</li>
+                        <li><strong>Claude Code CLI</strong> (terminal-based${platformInfo.is_windows ? ", requires WSL" : ""})</li>
+                    </ul>
+                    <p style="color:#888;font-size:12px">After installing, restart ComfyUI to auto-configure.</p>
+                </div>
+            </div>
+        </div>
+        `;
+    } else if (desktopMode) {
+        // Desktop mode — show status panel
+        contentHtml = `
         <div class="claude-content">
             <div class="claude-desktop-panel">
                 <div class="desktop-status-section">
@@ -125,11 +153,15 @@ function createFloatingWindow() {
                 </div>
             </div>
         </div>
-    ` : `
+        `;
+    } else {
+        // CLI mode — show terminal
+        contentHtml = `
         <div class="claude-content">
             <div class="claude-terminal" id="claude-terminal"></div>
         </div>
-    `;
+        `;
+    }
 
     container.innerHTML = `
         <div class="claude-resize-edge claude-resize-n"></div>
@@ -149,7 +181,7 @@ function createFloatingWindow() {
                 </div>
             </div>
             <div class="claude-controls">
-                ${desktopMode ? '' : '<button class="claude-btn claude-reload" title="Reload Terminal">↻</button>'}
+                ${desktopMode || unsupportedMode ? '' : '<button class="claude-btn claude-reload" title="Reload Terminal">↻</button>'}
                 <button class="claude-btn claude-minimize" title="Minimize">−</button>
                 <button class="claude-btn claude-close" title="Close">×</button>
             </div>
@@ -164,8 +196,8 @@ function createFloatingWindow() {
             position: fixed;
             top: 100px;
             right: 20px;
-            width: ${desktopMode ? '360px' : '950px'};
-            height: ${desktopMode ? '320px' : '600px'};
+            width: ${desktopMode || unsupportedMode ? '360px' : '950px'};
+            height: ${unsupportedMode ? '280px' : desktopMode ? '320px' : '600px'};
             background-color: #0d0d0d;
             border: 1px solid #333;
             border-radius: 8px;
@@ -527,6 +559,9 @@ function createFloatingWindow() {
                 setupBtn.textContent = "Configuring...";
                 try {
                     const resp = await fetch("/claude-code/setup-desktop", { method: "POST" });
+                    if (!resp.ok) {
+                        throw new Error(`HTTP ${resp.status}`);
+                    }
                     const data = await resp.json();
                     const statusEl = container.querySelector("#desktop-mcp-status");
                     if (data.configured) {
@@ -534,9 +569,10 @@ function createFloatingWindow() {
                         if (statusEl) statusEl.textContent = "Configured";
                     } else {
                         setupBtn.textContent = "Setup Failed - Retry";
-                        if (statusEl) statusEl.textContent = "Error";
+                        if (statusEl) statusEl.textContent = data.message || "Error";
                     }
                 } catch (e) {
+                    console.error("[Comfy Pilot] Desktop setup failed:", e);
                     setupBtn.textContent = "Setup Failed - Retry";
                 }
                 setupBtn.disabled = false;

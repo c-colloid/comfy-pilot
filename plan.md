@@ -254,25 +254,35 @@ UI でこれを明確に案内する。
 
 ---
 
-## 実装順序まとめ
+## 実装状況
 
 ```
-Phase 1 (P0) — 最小限の Desktop 動作
-  ├─ 1.1 setup_desktop_mcp_config() 追加
-  ├─ 1.2 起動シーケンス変更（全 OS 対応）
-  └─ 1.3 MCP プロトコル互換性確認
+Phase 1 (P0) — 最小限の Desktop 動作              ✅ 完了
+  ├─ 1.1 setup_desktop_mcp_config() 追加          ✅
+  ├─ 1.2 起動シーケンス変更（全 OS 対応）           ✅
+  └─ 1.3 MCP プロトコル互換性確認                  ⚠️ エラーメッセージ改善のみ
 
-Phase 2 (P1) — UX 改善
-  ├─ 2.1 デュアルモード UI（CLI / Desktop）
-  └─ 2.2 API 拡張（desktop-status, setup-desktop）
+Phase 2 (P1) — UX 改善                           ✅ 完了
+  ├─ 2.1 デュアルモード UI（CLI / Desktop）         ✅
+  └─ 2.2 API 拡張（desktop-status, setup-desktop） ✅
 
-Phase 3 (P2) — 品質向上
-  ├─ 3.1 命名統一（Comfy Pilot）
-  ├─ 3.2 Windows 強化
-  └─ 3.3 ドキュメント更新
+Phase 3 (P2) — 品質向上                           ✅ 完了
+  ├─ 3.1 命名統一（Comfy Pilot）                   ✅
+  ├─ 3.2 Windows 強化                             ✅
+  └─ 3.3 ドキュメント更新                          ✅
 
-Phase 4 (P3) — 将来拡張
+Phase 4 (P3) — 将来拡張                           🔜 未着手
   └─ 4.1 SSE/HTTP トランスポート
 ```
 
-**想定される変更ファイル数**: 主に 3 ファイル (`__init__.py`, `js/claude-code.js`, `mcp_server.py`) + `README.md`
+## 品質改善（追加実施）
+
+初回実装のコードレビューで見つかった問題を修正:
+
+1. **Windows プラットフォーム検出バグ修正** — `isDesktopMode()` が Desktop 未インストール時にも true を返す問題を修正。`isUnsupportedMode()` を追加し、ガイダンス UI を表示するように変更。
+2. **`setup_desktop_mcp_config()` 戻り値追加** — `(success, message)` タプルを返すように変更し、`setup_desktop_handler()` が直接結果を判定できるように改善。
+3. **フロントエンドエラーハンドリング改善** — Setup ボタンの HTTP ステータスチェック追加、`console.error` ログ追加、エラーメッセージの表示改善。
+4. **ログメッセージ一貫性修正** — CLI 不在時のターミナル登録メッセージを条件分岐で適切に表示。
+5. **README.md 更新** — Desktop セットアップ手順、サポートクライアント一覧、ブラウザ必須要件、トラブルシューティングを追加。
+
+**変更ファイル**: `__init__.py`, `js/claude-code.js`, `mcp_server.py`, `README.md`
