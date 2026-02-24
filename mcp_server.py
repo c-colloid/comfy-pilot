@@ -123,11 +123,11 @@ def make_request(endpoint: str, method: str = "GET", data: dict = None, timeout:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.URLError as e:
-        return {"error": f"Failed to connect to ComfyUI: {e}"}
+        return {"error": f"Failed to connect to ComfyUI at {COMFYUI_URL}: {e}. Make sure ComfyUI is running."}
     except urllib.error.HTTPError as e:
         return {"error": f"HTTP error from ComfyUI: {e.code} {e.reason}"}
     except socket.timeout:
-        return {"error": f"Request to ComfyUI timed out after {timeout}s"}
+        return {"error": f"Request to ComfyUI timed out after {timeout}s. ComfyUI may be busy or not running."}
     except json.JSONDecodeError:
         return {"error": "Invalid JSON response from ComfyUI"}
     except Exception as e:

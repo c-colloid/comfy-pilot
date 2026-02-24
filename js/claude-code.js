@@ -7,16 +7,30 @@ let fitAddon = null;
 let websocket = null;
 let claudeRunning = false;
 
+// Platform info (fetched on startup)
+let platformInfo = null;
+
 app.registerExtension({
     name: "comfy.claude-code",
 
     async setup() {
-        console.log("Claude Code extension loading...");
+        console.log("Comfy Pilot extension loading...");
 
-        // Load xterm.js
-        await loadXtermDependencies();
+        // Fetch platform info first to determine mode
+        try {
+            const resp = await fetch("/claude-code/platform");
+            platformInfo = await resp.json();
+        } catch (e) {
+            console.warn("[Comfy Pilot] Could not fetch platform info, assuming CLI mode");
+            platformInfo = { terminal_supported: true, cli_detected: true, desktop_detected: false };
+        }
 
-        // Create floating window
+        // Only load xterm if terminal is supported
+        if (platformInfo.terminal_supported) {
+            await loadXtermDependencies();
+        }
+
+        // Create floating window (adapts based on platform)
         floatingWindow = createFloatingWindow();
         document.body.appendChild(floatingWindow);
 
@@ -35,7 +49,9 @@ app.registerExtension({
         // Start workflow sync
         startWorkflowSync();
 
-        console.log("Claude Code extension loaded");
+        console.log("Comfy Pilot extension loaded" +
+            (platformInfo.desktop_detected ? " (Desktop mode)" : "") +
+            (platformInfo.cli_detected ? " (CLI detected)" : ""));
     },
 });
 
@@ -70,9 +86,50 @@ function loadScript(src) {
 }
 
 
+function isDesktopMode() {
+    return platformInfo && !platformInfo.terminal_supported;
+}
+
 function createFloatingWindow() {
     const container = document.createElement("div");
     container.id = "claude-code-window";
+
+    const desktopMode = isDesktopMode();
+
+    // In Desktop mode, show a compact status panel instead of a terminal
+    const contentHtml = desktopMode ? `
+        <div class="claude-content">
+            <div class="claude-desktop-panel">
+                <div class="desktop-status-section">
+                    <div class="desktop-status-row">
+                        <span class="desktop-label">Mode</span>
+                        <span class="desktop-value">${platformInfo.cli_detected ? "CLI + Desktop" : "Desktop"}</span>
+                    </div>
+                    <div class="desktop-status-row">
+                        <span class="desktop-label">Desktop MCP</span>
+                        <span class="desktop-value" id="desktop-mcp-status">${platformInfo.desktop_mcp_configured ? "Configured" : "Not configured"}</span>
+                    </div>
+                    <div class="desktop-status-row">
+                        <span class="desktop-label">Platform</span>
+                        <span class="desktop-value">${platformInfo.platform || "unknown"}</span>
+                    </div>
+                </div>
+                <div class="desktop-info">
+                    <p>Comfy Pilot MCP tools are available in Claude Desktop.</p>
+                    <p>Open Claude Desktop and use the ComfyUI tools to build and edit workflows.</p>
+                </div>
+                <div class="desktop-actions">
+                    <button class="desktop-btn" id="desktop-setup-btn">
+                        ${platformInfo.desktop_mcp_configured ? "Reconfigure MCP" : "Setup Desktop MCP"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    ` : `
+        <div class="claude-content">
+            <div class="claude-terminal" id="claude-terminal"></div>
+        </div>
+    `;
 
     container.innerHTML = `
         <div class="claude-resize-edge claude-resize-n"></div>
@@ -85,21 +142,19 @@ function createFloatingWindow() {
         <div class="claude-resize-corner claude-resize-se"></div>
         <div class="claude-header">
             <div class="claude-title-area">
-                <span class="claude-title">Claude Code</span>
+                <span class="claude-title">Comfy Pilot</span>
                 <div class="claude-mcp-status" title="MCP Server Status">
                     <span class="mcp-indicator"></span>
                     <span class="mcp-label">MCP</span>
                 </div>
             </div>
             <div class="claude-controls">
-                <button class="claude-btn claude-reload" title="Reload Terminal">↻</button>
+                ${desktopMode ? '' : '<button class="claude-btn claude-reload" title="Reload Terminal">↻</button>'}
                 <button class="claude-btn claude-minimize" title="Minimize">−</button>
                 <button class="claude-btn claude-close" title="Close">×</button>
             </div>
         </div>
-        <div class="claude-content">
-            <div class="claude-terminal" id="claude-terminal"></div>
-        </div>
+        ${contentHtml}
     `;
 
     // Apply styles
@@ -109,8 +164,8 @@ function createFloatingWindow() {
             position: fixed;
             top: 100px;
             right: 20px;
-            width: 950px;
-            height: 600px;
+            width: ${desktopMode ? '360px' : '950px'};
+            height: ${desktopMode ? '320px' : '600px'};
             background-color: #0d0d0d;
             border: 1px solid #333;
             border-radius: 8px;
@@ -374,6 +429,78 @@ function createFloatingWindow() {
         #claude-menu-btn:hover {
             background: linear-gradient(135deg, #7c7ff2 0%, #6366f1 100%);
         }
+
+        /* Desktop mode panel */
+        .claude-desktop-panel {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            height: 100%;
+        }
+
+        .desktop-status-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 6px;
+            border: 1px solid #2a2a2a;
+        }
+
+        .desktop-status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .desktop-label {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .desktop-value {
+            color: #e0e0e0;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .desktop-info {
+            color: #888;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .desktop-info p {
+            margin: 0 0 6px 0;
+        }
+
+        .desktop-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .desktop-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+
+        .desktop-btn:hover {
+            background: linear-gradient(135deg, #7c7ff2 0%, #6366f1 100%);
+        }
+
+        .desktop-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     `;
     document.head.appendChild(style);
 
@@ -384,10 +511,37 @@ function createFloatingWindow() {
             container.style.display = "none";
         });
 
-        // Reload button - fully reloads terminal
-        container.querySelector(".claude-reload").addEventListener("click", () => {
-            reloadTerminal();
-        });
+        // Reload button - fully reloads terminal (CLI mode only)
+        const reloadBtn = container.querySelector(".claude-reload");
+        if (reloadBtn) {
+            reloadBtn.addEventListener("click", () => {
+                reloadTerminal();
+            });
+        }
+
+        // Desktop setup button (Desktop mode only)
+        const setupBtn = container.querySelector("#desktop-setup-btn");
+        if (setupBtn) {
+            setupBtn.addEventListener("click", async () => {
+                setupBtn.disabled = true;
+                setupBtn.textContent = "Configuring...";
+                try {
+                    const resp = await fetch("/claude-code/setup-desktop", { method: "POST" });
+                    const data = await resp.json();
+                    const statusEl = container.querySelector("#desktop-mcp-status");
+                    if (data.configured) {
+                        setupBtn.textContent = "Reconfigure MCP";
+                        if (statusEl) statusEl.textContent = "Configured";
+                    } else {
+                        setupBtn.textContent = "Setup Failed - Retry";
+                        if (statusEl) statusEl.textContent = "Error";
+                    }
+                } catch (e) {
+                    setupBtn.textContent = "Setup Failed - Retry";
+                }
+                setupBtn.disabled = false;
+            });
+        }
 
         // Minimize button - toggle minimized state
         const minimizeBtn = container.querySelector(".claude-minimize");
@@ -428,8 +582,10 @@ function createFloatingWindow() {
             checkMcpStatus();
         });
 
-        // Initialize terminal
-        initTerminal(container.querySelector("#claude-terminal"));
+        // Initialize terminal (CLI mode only)
+        if (!isDesktopMode()) {
+            initTerminal(container.querySelector("#claude-terminal"));
+        }
 
         // Start MCP status checking
         checkMcpStatus();
@@ -672,13 +828,13 @@ function connectWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws/claude-terminal`;
 
-    console.log(`[Claude Code] Connecting to ${wsUrl}`);
+    console.log(`[Comfy Pilot] Connecting to ${wsUrl}`);
 
     try {
         websocket = new WebSocket(wsUrl);
 
         websocket.onopen = () => {
-            console.log("[Claude Code] WebSocket connected");
+            console.log("[Comfy Pilot] WebSocket connected");
 
             // Clear terminal first
             terminal.clear();
@@ -731,16 +887,16 @@ function connectWebSocket() {
         };
 
         websocket.onclose = (event) => {
-            console.log("[Claude Code] WebSocket closed:", event.code, event.reason);
+            console.log("[Comfy Pilot] WebSocket closed:", event.code, event.reason);
             terminal.writeln("\n\x1b[1;31mTerminal disconnected.\x1b[0m");
             terminal.writeln("Click ↻ to reload.\n");
         };
 
         websocket.onerror = (error) => {
-            console.error("[Claude Code] WebSocket error:", error);
+            console.error("[Comfy Pilot] WebSocket error:", error);
         };
     } catch (e) {
-        console.error("[Claude Code] Failed to create WebSocket:", e);
+        console.error("[Comfy Pilot] Failed to create WebSocket:", e);
         terminal.writeln(`\x1b[1;31mFailed to connect: ${e.message}\x1b[0m\n`);
     }
 }
@@ -891,11 +1047,11 @@ function addMenuButton(floatingWindow) {
 
             const btn = document.createElement("button");
             btn.id = "claude-menu-btn";
-            btn.textContent = "Claude Code";
+            btn.textContent = "Comfy Pilot";
             btn.addEventListener("click", () => {
                 if (floatingWindow.style.display === "none") {
                     floatingWindow.style.display = "flex";
-                    if (fitAddon) {
+                    if (!isDesktopMode() && fitAddon) {
                         setTimeout(() => window.fitTerminalPreserveScroll(), 100);
                     }
                 } else {
@@ -921,13 +1077,13 @@ function addContextMenuOption() {
         // Add separator and Claude Code option
         options.push(null); // separator
         options.push({
-            content: "Open Claude Code",
+            content: "Open Comfy Pilot",
             callback: () => {
                 if (floatingWindow) {
                     floatingWindow.style.display = "flex";
 
-                    // Fit terminal and focus
-                    if (fitAddon) {
+                    // Fit terminal and focus (CLI mode only)
+                    if (!isDesktopMode() && fitAddon) {
                         setTimeout(() => {
                             window.fitTerminalPreserveScroll();
                             if (terminal) terminal.focus();

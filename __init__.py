@@ -1,6 +1,6 @@
-# ComfyUI Claude Code Plugin
-# A floating window extension for Claude Code integration
-# Windows-compatible version - terminal disabled, REST endpoints enabled
+# Comfy Pilot - ComfyUI Plugin
+# MCP integration for Claude Code CLI and Claude Desktop
+# Provides: workflow tools, graph editing, terminal (CLI mode), status panel (Desktop mode)
 
 import asyncio
 import json
@@ -73,11 +73,11 @@ def find_executable(name, verbose=False):
     path = shutil.which(name)
     if path:
         if verbose:
-            print(f"[Claude Code] Found {name} via shutil.which: {path}")
+            print(f"[Comfy Pilot] Found {name} via shutil.which: {path}")
         return path
 
     if verbose:
-        print(f"[Claude Code] {name} not in PATH, checking common locations...")
+        print(f"[Comfy Pilot] {name} not in PATH, checking common locations...")
 
     # Common locations for npm/node/claude on different systems
     common_paths = [
@@ -115,17 +115,17 @@ def find_executable(name, verbose=False):
     for pattern in common_paths:
         matches = glob.glob(pattern)
         if verbose and matches:
-            print(f"[Claude Code] Checking {pattern}: found {matches}")
+            print(f"[Comfy Pilot] Checking {pattern}: found {matches}")
         if matches:
             # Return the first match (or latest version for nvm-style paths)
             matches.sort(reverse=True)
             if os.path.isfile(matches[0]) and os.access(matches[0], os.X_OK):
                 if verbose:
-                    print(f"[Claude Code] Found executable: {matches[0]}")
+                    print(f"[Comfy Pilot] Found executable: {matches[0]}")
                 return matches[0]
 
     if verbose:
-        print(f"[Claude Code] {name} not found in any common location")
+        print(f"[Comfy Pilot] {name} not found in any common location")
     return None
 
 
@@ -145,7 +145,7 @@ def install_claude_code():
         if system == "windows":
             # Check if running in PowerShell or CMD
             # Try PowerShell first (more common)
-            print("[Claude Code] Installing Claude Code CLI via PowerShell...")
+            print("[Comfy Pilot] Installing Claude Code CLI via PowerShell...")
             result = subprocess.run(
                 ["powershell", "-Command", "irm https://claude.ai/install.ps1 | iex"],
                 capture_output=True,
@@ -154,7 +154,7 @@ def install_claude_code():
             )
             if result.returncode != 0:
                 # Fallback to CMD method
-                print("[Claude Code] PowerShell failed, trying CMD...")
+                print("[Comfy Pilot] PowerShell failed, trying CMD...")
                 result = subprocess.run(
                     ["cmd", "/c", "curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd"],
                     capture_output=True,
@@ -163,7 +163,7 @@ def install_claude_code():
                 )
         else:
             # macOS, Linux, WSL - use the shell script
-            print("[Claude Code] Installing Claude Code CLI...")
+            print("[Comfy Pilot] Installing Claude Code CLI...")
             result = subprocess.run(
                 ["bash", "-c", "curl -fsSL https://claude.ai/install.sh | bash"],
                 capture_output=True,
@@ -172,11 +172,11 @@ def install_claude_code():
             )
 
         if result.returncode == 0:
-            print("[Claude Code] Claude Code CLI installed successfully!")
+            print("[Comfy Pilot] Claude Code CLI installed successfully!")
             return True, "Claude Code CLI installed successfully!"
         else:
             error_msg = result.stderr or result.stdout or "Unknown error"
-            print(f"[Claude Code] Installation failed: {error_msg}")
+            print(f"[Comfy Pilot] Installation failed: {error_msg}")
             return False, f"Installation failed: {error_msg}"
     except subprocess.TimeoutExpired:
         return False, "Installation timed out after 120 seconds"
@@ -221,7 +221,7 @@ class WebSocketTerminal:
     def spawn(self, command=None):
         """Spawn a new PTY with an optional command."""
         if IS_WINDOWS:
-            print("[Claude Code] Terminal not supported on Windows")
+            print("[Comfy Pilot] Terminal not supported on Windows")
             return False
             
         # Get the user's default shell
@@ -366,7 +366,7 @@ def log_memory(context=""):
     if now - _last_memory_log >= MEMORY_LOG_INTERVAL:
         _last_memory_log = now
         breakdown = get_plugin_memory_breakdown()
-        print(f"[Claude Code] Plugin data: {breakdown['total_plugin_kb']:.1f}KB | Sessions: {breakdown['terminal_sessions']}" + (f" | {context}" if context else ""))
+        print(f"[Comfy Pilot] Plugin data: {breakdown['total_plugin_kb']:.1f}KB | Sessions: {breakdown['terminal_sessions']}" + (f" | {context}" if context else ""))
 
 
 def get_plugin_memory_breakdown():
@@ -525,7 +525,7 @@ async def websocket_handler(request):
         # Send a message indicating terminal is not supported on Windows
         await ws.send_str(json.dumps({
             "type": "error",
-            "message": "Terminal not supported on Windows. Use Clawdbot or Claude Code CLI directly."
+            "message": "Terminal not supported on Windows. Use Claude Desktop with the MCP tools instead."
         }))
         await ws.close()
         return ws
@@ -537,25 +537,25 @@ async def websocket_handler(request):
     initial_rows = 24
     initial_cols = 80
 
-    print(f"[Claude Code] WebSocket connected: {session_id}")
+    print(f"[Comfy Pilot] WebSocket connected: {session_id}")
     log_memory("ws connect")
 
     # Get command from query params, or auto-detect
     command = request.query.get("cmd", None)
     if command is None:
         command = get_claude_command()
-        print(f"[Claude Code] Auto-detected command: {command}")
+        print(f"[Comfy Pilot] Auto-detected command: {command}")
 
     # If claude is not found (command is just "claude" without path), try to install it
     if command in ("claude", "claude -c"):
-        print("[Claude Code] Claude CLI not found, attempting auto-install...")
+        print("[Comfy Pilot] Claude CLI not found, attempting auto-install...")
         success, message = install_claude_code()
         if success:
             # Re-detect the command with the newly installed claude
             command = get_claude_command()
-            print(f"[Claude Code] After install, command: {command}")
+            print(f"[Comfy Pilot] After install, command: {command}")
         else:
-            print(f"[Claude Code] Auto-install failed: {message}")
+            print(f"[Comfy Pilot] Auto-install failed: {message}")
             # Continue anyway - user will see the error in the terminal
 
     # Try to set up MCP if not already configured (may have been skipped at load time
@@ -563,7 +563,7 @@ async def websocket_handler(request):
     try:
         setup_mcp_config()
     except Exception as e:
-        print(f"[Claude Code] MCP setup error (non-fatal): {e}")
+        print(f"[Comfy Pilot] MCP setup error (non-fatal): {e}")
 
     async def read_pty():
         """Read from PTY and send to WebSocket."""
@@ -580,7 +580,7 @@ async def websocket_handler(request):
                     pending_data.append(data)
                     read_event.set()
             except Exception as e:
-                print(f"[Claude Code] Read callback error: {e}")
+                print(f"[Comfy Pilot] Read callback error: {e}")
 
         loop.add_reader(fd, on_readable)
 
@@ -593,7 +593,7 @@ async def websocket_handler(request):
                     data = pending_data.pop(0)
                     await ws.send_str("o" + data)
         except Exception as e:
-            print(f"[Claude Code] Read error: {e}")
+            print(f"[Comfy Pilot] Read error: {e}")
         finally:
             try:
                 loop.remove_reader(fd)
@@ -628,13 +628,13 @@ async def websocket_handler(request):
                             terminal_started = True
                             # Start reading task
                             read_task = asyncio.create_task(read_pty())
-                            print(f"[Claude Code] Terminal started with size {cols}x{rows}")
+                            print(f"[Comfy Pilot] Terminal started with size {cols}x{rows}")
                         else:
                             terminal.resize(rows, cols)
                 except json.JSONDecodeError:
                     pass
             elif msg.type == web.WSMsgType.ERROR:
-                print(f"[Claude Code] WebSocket error: {ws.exception()}")
+                print(f"[Comfy Pilot] WebSocket error: {ws.exception()}")
                 break
     finally:
         terminal.running = False
@@ -642,7 +642,7 @@ async def websocket_handler(request):
             read_task.cancel()
         terminal.close()
         del terminal_sessions[session_id]
-        print(f"[Claude Code] WebSocket disconnected: {session_id}")
+        print(f"[Comfy Pilot] WebSocket disconnected: {session_id}")
         log_memory("ws disconnect")
 
     return ws
@@ -656,11 +656,16 @@ async def mcp_status_handler(request):
 
         # Just check if the file exists and is readable - no subprocess
         if os.path.isfile(mcp_server_path):
+            cli_detected = find_executable("claude") is not None
+            desktop_detected = is_desktop_installed()
             return web.json_response({
                 "connected": True,
                 "tools": 15,  # Known tool count
                 "platform": "windows" if IS_WINDOWS else "unix",
-                "terminal_supported": not IS_WINDOWS
+                "terminal_supported": not IS_WINDOWS and cli_detected,
+                "cli_detected": cli_detected,
+                "desktop_detected": desktop_detected,
+                "desktop_mcp_configured": _is_desktop_mcp_configured()
             })
         else:
             return web.json_response({
@@ -676,14 +681,33 @@ async def mcp_status_handler(request):
 
 
 async def platform_info_handler(request):
-    """Return platform information."""
+    """Return platform information including Desktop detection."""
+    cli_detected = find_executable("claude") is not None
+    desktop_detected = is_desktop_installed()
+
     return web.json_response({
         "platform": sys.platform,
         "is_windows": IS_WINDOWS,
-        "terminal_supported": not IS_WINDOWS,
+        "terminal_supported": not IS_WINDOWS and cli_detected,
+        "cli_detected": cli_detected,
+        "desktop_detected": desktop_detected,
+        "desktop_mcp_configured": _is_desktop_mcp_configured(),
         "python_version": sys.version,
         "comfyui_url": get_comfyui_url_cached()
     })
+
+
+def _is_desktop_mcp_configured():
+    """Check if the Desktop MCP config has our entry."""
+    config_path = get_desktop_config_path()
+    if not config_path or not os.path.isfile(config_path):
+        return False
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return "comfyui" in config.get("mcpServers", {})
+    except Exception:
+        return False
 
 
 _comfyui_url_cache = None
@@ -703,6 +727,22 @@ def get_comfyui_url_cached():
         return "http://127.0.0.1:8188"
 
 
+async def setup_desktop_handler(request):
+    """Manually trigger Desktop MCP config setup."""
+    try:
+        setup_desktop_mcp_config()
+        configured = _is_desktop_mcp_configured()
+        config_path = get_desktop_config_path()
+        return web.json_response({
+            "status": "ok" if configured else "failed",
+            "configured": configured,
+            "config_path": config_path,
+            "message": "Restart Claude Desktop to activate the MCP server" if configured else "Could not write config"
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
 def setup_routes(app):
     """Set up the WebSocket and API routes."""
     app.router.add_get("/ws/claude-terminal", websocket_handler)
@@ -714,15 +754,12 @@ def setup_routes(app):
     app.router.add_get("/claude-code/mcp-status", mcp_status_handler)
     app.router.add_get("/claude-code/memory", memory_stats_handler)
     app.router.add_get("/claude-code/platform", platform_info_handler)
-    print("[Claude Code] Terminal WebSocket endpoint registered at /ws/claude-terminal")
-    print("[Claude Code] Workflow API endpoint registered at /claude-code/workflow")
-    print("[Claude Code] Run node endpoint registered at /claude-code/run-node")
-    print("[Claude Code] Graph command endpoint registered at /claude-code/graph-command")
-    print("[Claude Code] MCP status endpoint registered at /claude-code/mcp-status")
-    print("[Claude Code] Memory stats endpoint registered at /claude-code/memory")
-    print("[Claude Code] Platform info endpoint registered at /claude-code/platform")
-    if IS_WINDOWS:
-        print("[Claude Code] Note: Terminal functionality disabled on Windows")
+    app.router.add_post("/claude-code/setup-desktop", setup_desktop_handler)
+    print("[Comfy Pilot] Endpoints registered: workflow, graph-command, mcp-status, platform, setup-desktop")
+    if not IS_WINDOWS:
+        print("[Comfy Pilot] Terminal WebSocket registered at /ws/claude-terminal")
+    else:
+        print("[Comfy Pilot] Note: Terminal disabled on Windows (use Claude Desktop)")
 
 
 def write_comfyui_url():
@@ -738,12 +775,105 @@ def write_comfyui_url():
         url = f"http://{address}:{port}"
         with open(url_file, "w") as f:
             f.write(url)
-        print(f"[Claude Code] ComfyUI URL written to {url_file}: {url}")
+        print(f"[Comfy Pilot] ComfyUI URL written to {url_file}: {url}")
     except Exception as e:
         # Fallback to default
         with open(url_file, "w") as f:
             f.write("http://127.0.0.1:8188")
-        print(f"[Claude Code] Using default ComfyUI URL")
+        print(f"[Comfy Pilot] Using default ComfyUI URL")
+
+
+def get_desktop_config_path():
+    """Get the path to Claude Desktop's config file based on the current OS."""
+    if IS_WINDOWS:
+        # Windows: %APPDATA%\Claude\claude_desktop_config.json
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            return os.path.join(appdata, "Claude", "claude_desktop_config.json")
+        return None
+    elif sys.platform == "darwin":
+        # macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+        return os.path.join(
+            Path.home(), "Library", "Application Support", "Claude",
+            "claude_desktop_config.json"
+        )
+    else:
+        # Linux: ~/.config/Claude/claude_desktop_config.json
+        return os.path.join(
+            Path.home(), ".config", "Claude", "claude_desktop_config.json"
+        )
+
+
+def is_desktop_installed():
+    """Check if Claude Desktop appears to be installed by checking for its config directory."""
+    config_path = get_desktop_config_path()
+    if not config_path:
+        return False
+    config_dir = os.path.dirname(config_path)
+    return os.path.isdir(config_dir)
+
+
+def setup_desktop_mcp_config():
+    """Set up MCP server configuration for Claude Desktop.
+
+    Writes to claude_desktop_config.json so Claude Desktop can use our MCP server.
+    Preserves any existing config entries (other MCP servers, etc).
+    """
+    config_path = get_desktop_config_path()
+    if not config_path:
+        print("[Comfy Pilot] Could not determine Claude Desktop config path")
+        return
+
+    config_dir = os.path.dirname(config_path)
+    if not os.path.isdir(config_dir):
+        # Desktop not installed — skip silently
+        return
+
+    plugin_dir = os.path.dirname(os.path.abspath(__file__))
+    mcp_server_path = os.path.join(plugin_dir, "mcp_server.py")
+    python_path = sys.executable
+
+    # Build the desired MCP server entry
+    desired_entry = {
+        "command": python_path,
+        "args": [mcp_server_path]
+    }
+
+    # Read existing config (if any)
+    config = {}
+    if os.path.isfile(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[Comfy Pilot] Warning: Could not read {config_path}: {e}")
+            # Start fresh if the file is corrupted
+            config = {}
+
+    # Ensure mcpServers section exists
+    if "mcpServers" not in config:
+        config["mcpServers"] = {}
+
+    # Check if already configured with the same values
+    existing = config["mcpServers"].get("comfyui")
+    if existing and existing.get("command") == python_path and existing.get("args") == [mcp_server_path]:
+        print("[Comfy Pilot] Desktop MCP config already up to date")
+        return
+
+    # Update the comfyui entry (preserve all other entries)
+    config["mcpServers"]["comfyui"] = desired_entry
+
+    # Write back
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+        print(f"[Comfy Pilot] Desktop MCP config written to {config_path}")
+        if existing:
+            print("[Comfy Pilot] Note: Restart Claude Desktop to pick up the updated config")
+        else:
+            print("[Comfy Pilot] Note: Restart Claude Desktop to activate the MCP server")
+    except IOError as e:
+        print(f"[Comfy Pilot] Warning: Could not write {config_path}: {e}")
 
 
 def setup_mcp_config():
@@ -761,7 +891,7 @@ def setup_mcp_config():
     # Check if claude is available (use find_executable to check common paths)
     claude_path = find_executable("claude")
     if not claude_path:
-        print("[Claude Code] 'claude' command not found - MCP server not configured (will retry when terminal opens)")
+        print("[Comfy Pilot] 'claude' command not found - MCP server not configured (will retry when terminal opens)")
         return
 
     # Check if MCP server is already configured
@@ -773,7 +903,7 @@ def setup_mcp_config():
             timeout=10
         )
         if result.returncode == 0:
-            print("[Claude Code] MCP server 'comfyui' already configured")
+            print("[Comfy Pilot] MCP server 'comfyui' already configured")
             return
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
@@ -788,13 +918,13 @@ def setup_mcp_config():
             timeout=30
         )
         if result.returncode == 0:
-            print(f"[Claude Code] MCP server added: {python_path} {mcp_server_path}")
+            print(f"[Comfy Pilot] MCP server added: {python_path} {mcp_server_path}")
         else:
-            print(f"[Claude Code] Failed to add MCP server: {result.stderr}")
+            print(f"[Comfy Pilot] Failed to add MCP server: {result.stderr}")
     except subprocess.TimeoutExpired:
-        print("[Claude Code] Timeout adding MCP server")
+        print("[Comfy Pilot] Timeout adding MCP server")
     except FileNotFoundError:
-        print("[Claude Code] 'claude' command not found - MCP server not configured")
+        print("[Comfy Pilot] 'claude' command not found - MCP server not configured")
 
 
 # Hook into ComfyUI's server setup
@@ -807,17 +937,25 @@ try:
     # Write ComfyUI URL for MCP server
     write_comfyui_url()
 
-    # Set up MCP configuration (skip on Windows if claude not found)
-    if not IS_WINDOWS:
+    # Set up MCP configuration for Claude Code CLI (Unix only, requires CLI)
+    if not IS_WINDOWS and find_executable("claude"):
         setup_mcp_config()
-    else:
-        print("[Claude Code] Skipping MCP auto-config on Windows (use Clawdbot instead)")
+
+    # Set up MCP configuration for Claude Desktop (all platforms)
+    setup_desktop_mcp_config()
 
     # Log initial memory usage
     mem_mb = get_memory_mb()
-    platform_note = " (Windows - terminal disabled)" if IS_WINDOWS else ""
-    print(f"[Claude Code] Plugin loaded successfully{platform_note} (Memory: {mem_mb:.1f}MB)")
+    features = []
+    if IS_WINDOWS:
+        features.append("terminal disabled")
+    if is_desktop_installed():
+        features.append("Desktop detected")
+    if find_executable("claude"):
+        features.append("CLI detected")
+    feature_note = f" ({', '.join(features)})" if features else ""
+    print(f"[Comfy Pilot] Plugin loaded successfully{feature_note} (Memory: {mem_mb:.1f}MB)")
 except Exception as e:
-    print(f"[Claude Code] Failed to register routes: {e}")
+    print(f"[Comfy Pilot] Failed to register routes: {e}")
     import traceback
     traceback.print_exc()
