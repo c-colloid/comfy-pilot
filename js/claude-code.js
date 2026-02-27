@@ -1231,9 +1231,9 @@ function startWorkflowSync() {
         console.log("[comfy-pilot] Event-driven workflow sync initialized");
     }
 
-    // --- フォールバックポーリング (5秒間隔) ---
+    // --- フォールバックポーリング (2秒間隔) ---
     // ウィジェット値変更はLiteGraphイベントで検知できないためポーリングでカバー
-    setInterval(syncWorkflow, 5000);
+    setInterval(syncWorkflow, 2000);
 
     // --- graph-commandポーリング (既存維持) ---
     pollGraphCommands();
@@ -1244,28 +1244,27 @@ function startWorkflowSync() {
 let lastWorkflowHash = null;
 let syncTimer = null;
 let isSyncing = false;
+let syncPending = false;
 
 /**
- * djb2ベースの高速ハッシュ関数
- * 全体をサンプリングしてウィジェット値の変更を確実に検知
+ * djb2ハッシュ — 全文字を走査して変更を確実に検知
  */
 function quickHash(str) {
     let hash = 5381;
     const len = str.length;
-    const step = Math.max(1, Math.floor(len / 500));
-    for (let i = 0; i < len; i += step) {
+    for (let i = 0; i < len; i++) {
         hash = ((hash << 5) + hash) + str.charCodeAt(i);
         hash = hash & hash;
     }
-    for (let i = Math.max(0, len - 20); i < len; i++) {
-        hash = ((hash << 5) + hash) + str.charCodeAt(i);
-        hash = hash & hash;
-    }
-    return len + "_" + hash.toString(36);
+    return hash.toString(36);
 }
 
 async function syncWorkflow() {
-    if (isSyncing) return;
+    if (isSyncing) {
+        // 同期中に呼ばれた場合、完了後に再実行をスケジュール
+        syncPending = true;
+        return;
+    }
     try {
         if (!app.graph) return;
         isSyncing = true;
@@ -1292,6 +1291,11 @@ async function syncWorkflow() {
         // Silently fail
     } finally {
         isSyncing = false;
+        // 同期中にリクエストがあった場合、再実行
+        if (syncPending) {
+            syncPending = false;
+            scheduleSyncWorkflow(200);
+        }
     }
 }
 
