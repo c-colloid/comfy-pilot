@@ -1189,33 +1189,94 @@ async function checkMcpStatus() {
 }
 
 // Workflow sync - send current workflow to backend periodically
-function startWorkflowSync() {
-    // Sync immediately and then every 2 seconds
-    syncWorkflow();
-    setInterval(syncWorkflow, 2000);
+/**
+ * デバウンス付き即時同期をスケジュール
+ */
+function scheduleSyncWorkflow(delay = 300) {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncWorkflow, delay);
+}
 
-    // Also poll for graph commands
+// Workflow sync - event-driven hybrid with fallback polling
+function startWorkflowSync() {
+    // 初回同期
+    syncWorkflow();
+
+    // --- イベント駆動: グラフ構造変更の即時検知 ---
+    if (app.graph) {
+        const origAfterChange = app.graph.onAfterChange;
+        app.graph.onAfterChange = function (...args) {
+            scheduleSyncWorkflow(300);
+            if (origAfterChange) origAfterChange.apply(this, args);
+        };
+
+        const origNodeAdded = app.graph.onNodeAdded;
+        app.graph.onNodeAdded = function (node) {
+            scheduleSyncWorkflow(200);
+            if (origNodeAdded) origNodeAdded.apply(this, arguments);
+        };
+
+        const origNodeRemoved = app.graph.onNodeRemoved;
+        app.graph.onNodeRemoved = function (node) {
+            scheduleSyncWorkflow(200);
+            if (origNodeRemoved) origNodeRemoved.apply(this, arguments);
+        };
+
+        const origConnectionChange = app.graph.onConnectionChange;
+        app.graph.onConnectionChange = function (node, link_info) {
+            scheduleSyncWorkflow(200);
+            if (origConnectionChange) origConnectionChange.apply(this, arguments);
+        };
+
+        console.log("[comfy-pilot] Event-driven workflow sync initialized");
+    }
+
+    // --- フォールバックポーリング (5秒間隔) ---
+    // ウィジェット値変更はLiteGraphイベントで検知できないためポーリングでカバー
+    setInterval(syncWorkflow, 5000);
+
+    // --- graph-commandポーリング (既存維持) ---
     pollGraphCommands();
     setInterval(pollGraphCommands, 200);
 }
 
 // Track if workflow has changed to avoid unnecessary syncs
 let lastWorkflowHash = null;
+let syncTimer = null;
+let isSyncing = false;
+
+/**
+ * djb2ベースの高速ハッシュ関数
+ * 全体をサンプリングしてウィジェット値の変更を確実に検知
+ */
+function quickHash(str) {
+    let hash = 5381;
+    const len = str.length;
+    const step = Math.max(1, Math.floor(len / 500));
+    for (let i = 0; i < len; i += step) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash;
+    }
+    for (let i = Math.max(0, len - 20); i < len; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash;
+    }
+    return len + "_" + hash.toString(36);
+}
 
 async function syncWorkflow() {
+    if (isSyncing) return;
     try {
         if (!app.graph) return;
+        isSyncing = true;
 
-        // Get the workflow in ComfyUI's format
         const workflow = app.graph.serialize();
-
-        // Simple hash to detect changes - avoid syncing if nothing changed
         const workflowStr = JSON.stringify(workflow);
-        const hash = workflowStr.length + "_" + (workflowStr.charCodeAt(100) || 0);
+        const hash = quickHash(workflowStr);
+
         if (hash === lastWorkflowHash) return;
         lastWorkflowHash = hash;
 
-        // Send to backend (without graphToPrompt which can cause UI flicker)
         await fetch("/claude-code/workflow", {
             method: "POST",
             headers: {
@@ -1223,12 +1284,14 @@ async function syncWorkflow() {
             },
             body: JSON.stringify({
                 workflow: workflow,
-                workflow_api: null,  // Only fetch on demand to avoid flicker
+                workflow_api: null,
                 timestamp: Date.now(),
             }),
         });
     } catch (e) {
-        // Silently fail - don't spam console
+        // Silently fail
+    } finally {
+        isSyncing = false;
     }
 }
 
